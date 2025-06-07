@@ -352,7 +352,7 @@ public abstract class OkaeriConfig {
         }
 
         for (FieldDeclaration field : this.getDeclaration().getReadOnlyFields()) {
-            if (this.getConfigurer().keyExists(field.getName()) || !field.getStartingValue().equals(field.getValue())) {
+            if (shouldHandleReadOnlyField(field)) {
                 saveField(field);
             }
         }
@@ -671,7 +671,10 @@ public abstract class OkaeriConfig {
         try {
             value = this.getConfigurer().getValue(fieldName, type, genericType, SerdesContext.of(this.configurer, field));
             if (OkaeriConfig.class.isAssignableFrom(type)) {
-                ((OkaeriConfig) value).setExcludedFieldsBy((OkaeriConfig) fieldValue);
+                OkaeriConfig okaeriValue = (OkaeriConfig) value;
+                OkaeriConfig okaeriFieldValue = (OkaeriConfig) fieldValue;
+                okaeriValue.setExcludedFieldsBy(okaeriFieldValue);
+                okaeriValue.setReadOnlyFieldsBy(okaeriFieldValue);
             }
         } catch (Exception exception) {
             throw new OkaeriException("failed to #getValue for " + fieldName, exception);
@@ -726,5 +729,26 @@ public abstract class OkaeriConfig {
             }
         }
         return this;
+    }
+
+    public OkaeriConfig setReadOnlyFieldsBy(OkaeriConfig source) {
+        for (FieldDeclaration field : this.getDeclaration().getReadOnlyFields()) {
+            if (shouldHandleReadOnlyField(field)) {
+                continue;
+            }
+
+            Field targetField = field.getField();
+            targetField.setAccessible(true);
+            try {
+                field.updateValue(targetField.get(source));
+            } catch (IllegalAccessException e) {
+                this.logger.warning("Unable to access field: " + targetField.getName() + " due to access restrictions.");
+            }
+        }
+        return this;
+    }
+
+    public boolean shouldHandleReadOnlyField(FieldDeclaration field) {
+        return this.getConfigurer().keyExists(field.getName()) || !field.getStartingValue().equals(field.getValue());
     }
 }
